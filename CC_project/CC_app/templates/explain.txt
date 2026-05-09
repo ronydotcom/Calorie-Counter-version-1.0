@@ -1,0 +1,247 @@
+## dashboard and calorie : 
+
+1. URLS :
+
+from django.urls import path
+from CC_app.views import*
+urlpatterns = [
+    path('dashboard/',dashboard_page,name='dashboard_page'),
+    path('calorie-list/',calorie_list,name='calorie_list'),
+    path('add-calorie/',add_calorie,name='add_calorie'),
+    path('update-calorie/<int:id>/',update_calorie,name='update_calorie'),
+    path('delete-calorie/<int:id>/',delete_calorie,name='delete_calorie'),
+]
+
+2. forms.py :
+class ConsumedCalorieForm(forms.ModelForm):
+    class Meta:
+        model=ConsumedCalories
+        fields='__all__'
+        exclude = ['consumed_by']
+
+
+3. views.py : 
+
+from django.shortcuts import render,redirect
+from CC_app.models import *
+from CC_app.forms import *
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from datetime import date
+from django.db.models import Sum , Count
+
+@login_required
+def dashboard_page(request):
+    current_user = request.user
+
+    try:
+        bmr = round(request.user.user_info.bmr,2)
+    except:
+        bmr = 0
+
+    today = date.today()
+
+    today_consumed_data = ConsumedCalories.objects.filter(
+        consumed_by=current_user,
+        created_by=today
+    )
+
+    total_consumed_calories = today_consumed_data.aggregate(
+        total_calorie=Sum('calorie'),
+        total_count=Count('calorie')
+    )
+
+    total_caloire = total_consumed_calories['total_calorie'] or 0
+
+    less_more = bmr-total_caloire
+
+    if bmr > total_caloire:
+        suggestion = 'besi kha calorie kom'
+    else:
+        suggestion = 'kom kha calorie beshi'
+
+    context = {
+        'required_calories': bmr,
+        'today_consumed_data': today_consumed_data,
+        'consumed_calories': total_caloire,
+        'total_count': total_consumed_calories['total_count'],
+        'less_more': less_more,
+        'suggestion': suggestion,
+    }
+
+    return render(request,'dashboard.html',context)
+
+def calorie_list(request):
+    consumed_data = ConsumedCalories.objects.filter(consumed_by=request.user)
+    context={
+        'consumed_data' : consumed_data
+    }
+    return render(request,'calorie_list.html',context)
+
+def add_calorie(request):
+    if request.method=='POST':
+        form_data = ConsumedCalorieForm(request.POST)
+        if form_data.is_valid():
+            data = form_data.save(commit=False)
+            data.consumed_by = request.user
+            data.save()
+            messages.success(request,'Successful')
+            return redirect('calorie_list')
+        
+    form_data=ConsumedCalorieForm()
+    context={
+        'form_data' : form_data,
+        'form_title': 'add calorie info',
+        'form_btn': 'add calorie'
+    }
+    return render(request,'master/base-form.html',context)
+
+
+def update_calorie(request,id):
+    try:
+        data=ConsumedCalories.objects.get(id=id)
+    except:
+        data=None
+        
+    if request.method=='POST':
+        form_data = ConsumedCalorieForm(request.POST,instance=data)
+        if form_data.is_valid():
+            data = form_data.save(commit=False)
+            data.consumed_by = request.user
+            data.save()
+            messages.success(request,'Successful')
+            return redirect('calorie_list')
+        
+    form_data=ConsumedCalorieForm(instance=data)
+    context={
+        'form_data' : form_data,
+        'form_title': 'update calorie info',
+        'form_btn': 'update calorie'
+    }
+    return render(request,'master/base-form.html',context)
+
+def delete_calorie(request,id):
+    try:
+        data=ConsumedCalories.objects.get(id=id)
+    except:
+        data=None
+    if data:
+        data.delete()
+    messages.success(request,'Successfully')
+    return redirect('calorie_list')
+
+
+4. model.py : 
+
+class ConsumedCalories(models.Model):
+    item_name= models.CharField(max_length=200,null=True)
+    calorie = models.FloatField(null=True)
+    created_by=models.DateField(auto_now_add=True,null=True)
+    consumed_by=models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        related_name='user_calorie'
+    )
+    def __str__(self):
+        return f'{self.item_name}-{self.consumed_by.username}'
+
+
+
+.......................................................................................................................................................................................
+
+
+##profile page : 
+
+
+forms.py : 
+
+class ProfileUpdateForm(forms.ModelForm):
+    class Meta:
+        model = BasicInfoModel
+        fields='__all__'
+        exclude = ['user','bmr']
+
+
+models.py : 
+
+class BasicInfoModel(models.Model):
+    GENDER_TYPE =[
+        ('Male','Male'),
+        ('Female','Female'),
+    ]
+    user=models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='user_info',
+        null=True,
+    )
+    
+    name=models.CharField(max_length=100,null=True)
+    age=models.PositiveIntegerField(null=True)
+    gender= models.CharField(max_length=10, null=True, choices=GENDER_TYPE)
+    height = models.FloatField(null=True)
+    weight = models.FloatField(null=True)
+    bmr=models.FloatField(null=True)
+    def __str__(self):
+        return f'{self.name}'
+
+
+
+views.py : 
+
+from django.shortcuts import render,redirect
+from CC_app.models import *
+from CC_app.forms import *
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+
+@login_required
+def profile_page(request):
+    return render(request,'profile.html')
+
+
+@login_required
+def update_profile(request):
+    try :
+        current_user=request.user.user_info
+    except:
+        current_user=None
+    if request.method=='POST':
+        form_data = ProfileUpdateForm(request.POST,instance=current_user)
+        if form_data.is_valid():
+            data = form_data.save(commit=False)
+            data.user = request.user
+            weight = data.weight
+            height = data.height
+            age = data.age 
+            if data.gender=='Male':
+                bmr_calculate = 66.47 +(13.75*weight)+(5.003*height)-(6.755*age)
+            else:
+                bmr_calculate = 655.1 +(9.563*weight)+(1.850*height)-(4.676*age)
+            data.bmr=bmr_calculate
+            data.save()
+            messages.success(request,'Profile update successfully')
+            return redirect('profile_page')
+    form_data=ProfileUpdateForm(instance=current_user)
+    context={
+        'form_data' : form_data,
+        'form_title': 'update profile info',
+        'form_btn': 'Update'
+    }
+                
+                
+    return render(request,'master/base-form.html',context)
+
+
+4. urls : 
+
+from django.urls import path
+from CC_app.views import*
+
+urlpatterns = [
+    path('profile/',profile_page,name='profile_page'),
+    path('update-profile/',update_profile,name='update_profile'),
+]
+
+..............................................................................................................................................................................................

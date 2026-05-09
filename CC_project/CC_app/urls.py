@@ -13,6 +13,4 @@ urlpatterns = [
     path('add-calorie/',add_calorie,name='add_calorie'),
     path('update-calorie/<int:id>/',update_calorie,name='update_calorie'),
     path('delete-calorie/<int:id>/',delete_calorie,name='delete_calorie'),
-
-    
 ]
